@@ -31,12 +31,30 @@ const {
 } = require('../pages/metamask/confirmation-page');
 const { setNetwork, getNetwork } = require('../helpers');
 
-let walletAddress;
+let walletAddress, isConnected;
 let switchBackToCypressWindow;
 
 module.exports = {
   walletAddress: () => {
     return walletAddress;
+  },
+  getIsConnected: async address => {
+    let _isConnected = false;
+    await puppeteer.waitAndClick(mainPageElements.optionsMenu.button);
+    await puppeteer.waitAndClick(
+      mainPageElements.optionsMenu.connectedSitesButton,
+    );
+    try {
+      await puppeteer.waitForXPathText(
+        address,
+        `//*[@class="connected-sites-list__content-rows"]`,
+      );
+      _isConnected = true;
+    } catch (e) {
+      _isConnected = false;
+    }
+    await puppeteer.waitAndClick(mainPageElements.connectedSites.closeButton);
+    return _isConnected;
   },
   // workaround for metamask random blank page on first run
   fixBlankPage: async () => {
@@ -427,6 +445,9 @@ module.exports = {
     return true;
   },
   acceptAccess: async allAccounts => {
+    if (isConnected) {
+      return true;
+    }
     const notificationPage = await puppeteer.switchToMetamaskNotification();
     if (allAccounts === true) {
       await puppeteer.waitAndClick(
@@ -589,7 +610,12 @@ module.exports = {
 
     return walletAddress;
   },
-  initialSetup: async ({ secretWordsOrPrivateKey, network, password }) => {
+  initialSetup: async ({
+    secretWordsOrPrivateKey,
+    network,
+    password,
+    baseUrl = '',
+  }) => {
     const isCustomNetwork =
       (process.env.NETWORK_NAME &&
         process.env.RPC_URL &&
@@ -599,7 +625,21 @@ module.exports = {
     await puppeteer.init();
     await puppeteer.assignWindows();
     await puppeteer.assignActiveTabName('metamask');
+    await puppeteer.switchToMetamaskWindow();
     await puppeteer.metamaskWindow().waitForTimeout(1000);
+
+    // because we can't reset the extension it could be that it's already unlocked, fix that
+    const setUp = await puppeteer.isMetamaskSetUp();
+    if (setUp) {
+      isConnected = await module.exports.getIsConnected(
+        baseUrl.replace(/https?:\/\//, ''),
+      );
+
+      walletAddress = await module.exports.getWalletAddress();
+      await puppeteer.switchToCypressWindow();
+      return true;
+    }
+
     if (
       (await puppeteer.metamaskWindow().$(unlockPageElements.unlockPage)) ===
       null
@@ -622,7 +662,13 @@ module.exports = {
       await puppeteer.switchToCypressWindow();
       return true;
     } else {
+      await puppeteer.switchToMetamaskWindow();
       await module.exports.unlock(password);
+
+      isConnected = await module.exports.getIsConnected(
+        baseUrl.replace(/https?:\/\//, ''),
+      );
+
       walletAddress = await module.exports.getWalletAddress();
       await puppeteer.switchToCypressWindow();
       return true;
