@@ -322,11 +322,6 @@ module.exports = {
 
     setNetwork(network);
 
-    await puppeteer.waitForText(
-      mainPageElements.networkSwitcher.networkName,
-      network.networkName,
-    );
-
     await switchToCypressIfNotActive();
     return true;
   },
